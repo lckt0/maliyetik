@@ -1,0 +1,21 @@
+{
+  "id": "/uygulama",
+  "name": "Maliyetik — Mali Evrak Paneli",
+  "short_name": "Maliyetik",
+  "description": "Mali evrak yönetimi, dijitalleştirme ve Luca aktarımı — mükellefleriniz tek pencerede, sekmelerle.",
+  "lang": "tr",
+  "dir": "ltr",
+  "start_url": "/uygulama",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#1d4ed8",
+  "categories": ["business", "finance", "productivity"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -1,0 +1,219 @@
+# ============================================================================
+#  Maliyetik — Docker Compose
+#
+#  Yalnızca `frontend` dışarıya port açar (FRONTEND_HOST_PORT, varsayılan 3340).
+#  `frontend` içindeki nginx `/api` isteklerini dahili ağ üzerinden `backend`'e
+#  iletir; MySQL / Redis / backend yalnızca dahili ağdadır.
+#  Üretimde önüne TLS sonlandıran bir ters vekil (Nginx, Caddy, Traefik vb.) koyun.
+#
+#  Kurulum:  cp .env.example .env  →  değerleri doldur  →  docker compose up -d --build
+# ============================================================================
+
+name: maliyetik
+
+# json-file sürücüsü varsayılan olarak log döndürmez; her servis bu sınırı devralır.
+x-logging: &log
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  # --------------------------------------------------------------------------
+  #  MySQL 8.4
+  # --------------------------------------------------------------------------
+  mysql:
+    image: mysql:8.4
+    <<: *log
+    restart: unless-stopped
+    mem_limit: 2g
+    cpus: 2
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_tr_0900_ai_ci
+      - --innodb-buffer-pool-size=${MYSQL_BUFFER_POOL:-1G}
+      - --max-connections=${MYSQL_MAX_CONNECTIONS:-300}
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_DATABASE}
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      TZ: ${TZ:-Europe/Istanbul}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      # İlk kalkışta şema + seed otomatik yüklenir (alfabetik sıra ile)
+      - ${DB_INIT:-./docker/mysql/init}:/docker-entrypoint-initdb.d:ro
+    # "$$VAR": parola healthcheck tanımına gömülmez, konteynerin ortamından okunur.
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -p\"$$MYSQL_ROOT_PASSWORD\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - internal
+
+  # --------------------------------------------------------------------------
+  #  Redis 7 — cache + BullMQ kuyruğu (async işleme, rate-limit)
+  # --------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    <<: *log
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 1
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      # redis-cli bu değişkeni otomatik okur — healthcheck'te -a bayrağıyla parola geçmez.
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+    # maxmemory: container limitine takılınca sert OOM-kill yerine LRU ile eviction yapar.
+    # requirepass CLI argümanı yerine konteynerin kendi env'inden ($$REDIS_PASSWORD) okunur.
+    command: ["sh", "-c", "exec redis-server --appendonly yes --maxmemory 400mb --maxmemory-policy allkeys-lru --requirepass \"$$REDIS_PASSWORD\""]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - internal
+
+  # --------------------------------------------------------------------------
+  #  Backend — NestJS API
+  # --------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: production
+      # Boş bırakılırsa /health sürüm damgasını "bilinmiyor" gösterir (scripts/ortam.sh doldurur).
+      args:
+        GIT_SHA: ${GIT_SHA:-}
+        BUILD_TIME: ${BUILD_TIME:-}
+    <<: *log
+    restart: unless-stopped
+    # HTML→PDF dönüşümü için headless Chromium (puppeteer-core) barındırır.
+    mem_limit: 1536m
+    cpus: 1.5
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment: &backend-env
+      # MySQL ile aynı saat dilimi (günlük damgaları ve yerel saat hesapları için).
+      TZ: ${TZ:-Europe/Istanbul}
+      # Varsayılan production; development ortamında .env.development
+      # NODE_ENV=development set eder (SQL log + farklı davranış için).
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3000
+      APP_URL: ${APP_URL}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      # --- Veritabanı ---
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: ${DB_DATABASE}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      # --- Redis ---
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      # --- SMTP (e-posta doğrulama) ---
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      SMTP_FROM: ${SMTP_FROM}
+      # --- Auth ---
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-900}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-1209600}
+      # --- Google Cloud Storage ---
+      GCS_PROJECT_ID: ${GCS_PROJECT_ID}
+      GCS_BUCKET: ${GCS_BUCKET}
+      # Service Account JSON'un base64'ü (compose'da çok-satır/tırnak sorununu önler)
+      GCS_CREDENTIALS_B64: ${GCS_CREDENTIALS_B64}
+      # --- Uygulama ---
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-50}
+      # --- Gemini (evrak dijitalleştirme, isteğe bağlı) ---
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL_CHEAP: ${GEMINI_MODEL_CHEAP:-gemini-2.5-flash-lite}
+      GEMINI_MODEL_LIGHT: ${GEMINI_MODEL_LIGHT:-gemini-2.5-flash}
+      GEMINI_MODEL_ADVANCED: ${GEMINI_MODEL_ADVANCED:-gemini-2.5-pro}
+      GEMINI_CONFIDENCE_THRESHOLD: ${GEMINI_CONFIDENCE_THRESHOLD:-0.85}
+      # --- Ödeme (isteğe bağlı; varsayılan mock = gerçek tahsilat yok) ---
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-mock}
+      IYZICO_API_KEY: ${IYZICO_API_KEY:-}
+      IYZICO_SECRET_KEY: ${IYZICO_SECRET_KEY:-}
+      SHOPIER_API_KEY: ${SHOPIER_API_KEY:-}
+      SHOPIER_API_SECRET: ${SHOPIER_API_SECRET:-}
+      SHOPIER_WEBSITE_INDEX: ${SHOPIER_WEBSITE_INDEX:-1}
+      ENFORCE_SEAT_LIMITS: ${ENFORCE_SEAT_LIMITS:-false}
+      # --- Admin > Altyapı Maliyetleri canlı verisi (isteğe bağlı) ---
+      GCP_BILLING_CREDENTIALS_B64: ${GCP_BILLING_CREDENTIALS_B64:-}
+      GCP_BILLING_BQ_DATASET: ${GCP_BILLING_BQ_DATASET:-}
+      GCP_BILLING_BQ_TABLE: ${GCP_BILLING_BQ_TABLE:-}
+      BREVO_API_KEY: ${BREVO_API_KEY:-}
+      # İlk admin (seeder kullanır)
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+    expose:
+      - "3000"
+    networks:
+      - internal
+
+  # --------------------------------------------------------------------------
+  #  Backend migrator — src + ts-node içeren `builder` aşamasını kullanır.
+  #  Normal `up` ile başlamaz (`tools` profile); yalnızca tek seferlik migration
+  #  uygulamak için: `docker compose --profile tools run --rm backend-migrate`
+  #  (bkz. scripts/ortam.sh).
+  # --------------------------------------------------------------------------
+  backend-migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: migrator
+    profiles: ["tools"]
+    mem_limit: 512m
+    cpus: 1
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment: *backend-env
+    networks:
+      - internal
+
+  # --------------------------------------------------------------------------
+  #  Frontend — React SPA (Vite build → Nginx static) + /api reverse proxy
+  # --------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
+        VITE_SITE_URL: ${VITE_SITE_URL:-${APP_URL:-}}
+        VITE_SUPPORT_EMAIL: ${VITE_SUPPORT_EMAIL:-}
+    <<: *log
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.5
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_BIND:-127.0.0.1}:${FRONTEND_HOST_PORT:-3340}:80"
+    security_opt: ["no-new-privileges:true"]
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  redis_data:

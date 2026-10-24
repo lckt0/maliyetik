@@ -1,0 +1,15 @@
+User-agent: *
+Allow: /$
+Allow: /login$
+Allow: /kayit$
+Allow: /dogrula$
+Allow: /araclar
+Allow: /u/
+Allow: /yasal
+
+Disallow: /mukellef
+Disallow: /musavir
+Disallow: /admin
+Disallow: /hesap
+
+Sitemap: __SITE_URL__/sitemap.xml

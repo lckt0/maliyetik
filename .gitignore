@@ -1,0 +1,47 @@
+# ---- Ortam / sırlar ----
+.env
+.env.*
+!.env.example
+!.env.development.example
+*.pem
+*service-account*.json
+secrets/
+
+# ---- Ortam yönetimi (scripts/ortam.sh) ----
+backups/
+data/
+
+# ---- Node ----
+node_modules/
+dist/
+build/
+coverage/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-store/
+
+# ---- Editör / OS ----
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# ---- Docker / veri ----
+docker-data/
+
+# ---- Test/örnek mükellef verisi (repo köküne yanlışlıkla düşenler) ----
+/*.zip
+/*.xlsx
+/*.jpg
+/*.jpeg
+
+# TypeScript artımlı derleme durumu
+*.tsbuildinfo
+
+# Yedek dosyalar
+*.bak
+*.orig
+*.yedek*

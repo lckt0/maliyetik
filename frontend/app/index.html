@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- viewport-fit=cover: çentikli/gesture-bar'lı cihazlarda env(safe-area-inset-*)
+         değerlerinin dolmasını sağlar; alt sekme çubuğu ve tarayıcı bunları kullanır.
+         Kullanıcı yakınlaştırması bilerek KISITLANMADI (erişilebilirlik); iOS'un giriş
+         alanına odaklanınca otomatik zoom yapması ise app.css'teki 16px taban yazı
+         boyutuyla önleniyor. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+
+    <title>Maliyetik</title>
+    <meta name="description" content="Mali evraklarınızı telefonunuzun kamerasıyla tarayıp anında yükleyin." />
+
+    <!-- Manifest bilinçli olarak kapsamın (/app/) İÇİNDE duruyor; bir manifest'in kendi
+         dizininin dışını kapsaması teknik olarak geçerli olsa da tarayıcılar arasında en
+         az sürprizli yerleşim budur. -->
+    <link rel="manifest" href="/app/manifest.webmanifest" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)" />
+
+    <!-- iOS: manifest'i (henüz) tam desteklemiyor; ana ekrandan tam ekran açılması için
+         apple-* etiketleri hâlâ gerekli. status-bar-style "default" bilinçli tercih —
+         "black-translucent" içeriği durum çubuğunun ALTINA taşır ve saat/pil ile
+         çakışma riski doğurur. -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Maliyetik" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="icon" href="/icons/icon-192.png" />
+
+    <script type="module" src="/src/app/main.tsx"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
